@@ -19,7 +19,7 @@ interface DraggableEmployeeProps {
 
 function DraggableEmployee({ employee, isManager }: DraggableEmployeeProps) {
     const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-      id: `employee-${employee.id}`, // Important to prefix so IDs are unique
+      id: `employee-${employee.id}`, 
     });
 
     const style: React.CSSProperties = {
