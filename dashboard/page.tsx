@@ -6,75 +6,144 @@ import { DndContext, closestCorners } from '@dnd-kit/core';
 import { Column } from '../components/Column/Column';
 import { DroppableCell } from '../components/DroppableCell';
 import {nanoid} from 'nanoid';
+import { DraggableEmployee } from '../components/DraggableEmployee';
 
 export default function Dashboard() {
     const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
     const times = ["9:00 AM", "10:00 AM", "11:00 AM", "12:00 PM", "1:00 PM", "2:00 PM", "3:00 PM", "4:00 PM", "5:00 PM"];
 
-    const [employees] = useState([
-        { id: 1, title: "Tralalero Tralala" },
-        { id: 2, title: "Crocodilo Bombardilo" },
-        { id: 3, title: "John Pork" },
-        { id: 4, title: "Tim Cheese" },
-    ]);
+
+    const [employees, setEmployees] = useState([]);
+    useEffect(() => {
+        async function fetchEmployees() {
+          const res = await fetch('/api/fetchEmployee');
+          const data = await res.json();
+          if (data.success) {
+            setEmployees(data.employees.map((emp, index) => ({
+              id: index,
+              title: emp.name
+            })));
+          }
+        }
+        fetchEmployees();
+      }, []);
 
     const [cellAssignments, setCellAssignments] = useState<Record<string, { id: string, title: string }[]>>({});
     const [activeEmployee, setActiveEmployee] = useState(null);
 
     const handleDragStart = (event) => {
         const { active } = event;
-        const id = parseInt(active.id.replace('employee-', ''), 10);
-        const employee = employees.find(emp => emp.id === id);
-        setActiveEmployee({ ...employee, id: `clone-${nanoid()}` });
-
-        if (active.id.startsWith("clone-")) {
-            const [cellId, empId] = active.id.split("::"); // "cell-id::clone-id"
-            const employee = cellAssignments[cellId]?.find(e => e.id === empId);
+    
+        if (active.id.startsWith("employee-")) {
+            const index = parseInt(active.id.replace("employee-", ""), 10);
+            const employee = employees[index]; 
+            if (employee) {
+                setActiveEmployee({ ...employee, id: `clone-${nanoid()}` });
+            }
+        } else if (active.id.includes("::")) {
+            const [cellId, empIndex] = active.id.split("::");
+            const employee = cellAssignments[cellId]?.find((e) => e.id === empIndex);
             if (employee) {
                 setActiveEmployee({ ...employee });
             }
         }
     };
 
-    const handleDragEnd = (event) => {
+
+    const sendAssignmentsToBackend = async (cellAssignments) => {
+        const assignmentsMap = new Map();
+    
+        Object.entries(cellAssignments).forEach(([cellId, employees]) => {
+            const [, day, timeKey] = cellId.split("-");
+            const time = timeKey.replace(/(\d{1,2})(\d{2})(AM|PM)/, (_, h, m, period) => {
+                return `${parseInt(h)}:${m} ${period}`;
+            });
+    
+            employees.forEach(emp => {
+                const key = `${emp.title}-${day}`;
+                if (!assignmentsMap.has(key)) {
+                    assignmentsMap.set(key, {
+                        employee: emp.title,
+                        day,
+                        times: [time]
+                    });
+                } else {
+                    assignmentsMap.get(key).times.push(time);
+                }
+            });
+        });
+    
+        const mergedAssignments = Array.from(assignmentsMap.values()).map(({ employee, day, times }) => {
+            const sorted = times.sort((a, b) => new Date(`1970/01/01 ${a}`) - new Date(`1970/01/01 ${b}`));
+            return {
+                employee,
+                day,
+                startTime: sorted[0],
+                endTime: sorted[sorted.length - 1]
+            };
+        });
+    
+        const payload = {
+            _id: "schedule",
+            assignments: mergedAssignments
+        };
+    
+        try {
+            const response = await fetch('/api/saveAssignments', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+    
+            const result = await response.json();
+            if (!result.success) {
+                console.error("Failed to save assignments");
+            }
+        } catch (err) {
+            console.error("Error saving assignments:", err);
+        }
+    };
+    
+    
+
+
+    const handleDragEnd = async (event) => {
         const { active, over } = event;
-
+    
         if (!over) return;
-
+    
         const overId = over.id;
-
-        // Trash bin drop
-        if (overId === "trash-bin") {
-            setCellAssignments(prev => {
-                const newAssignments = {};
-                for (const [key, value] of Object.entries(prev)) {
-                    newAssignments[key] = value.filter(emp => emp.id !== activeEmployee.id);
-                }
+    
+        setCellAssignments(prev => {
+            const newAssignments = { ...prev };
+    
+            // Remove from old cell
+            for (const [cellId, value] of Object.entries(prev)) {
+                newAssignments[cellId] = value.filter(emp => emp.title !== activeEmployee.title);
+            }
+    
+            if (overId === "trash-bin") {
+                sendAssignmentsToBackend(newAssignments);
                 return newAssignments;
-            });
-            return;
-        }
-
-        // Move to another cell
-        if (overId.startsWith("cell-")) {
-            setCellAssignments(prev => {
-                const newAssignments = { ...prev };
-
-                // Remove from original cell
-                for (const [cellId, value] of Object.entries(prev)) {
-                    newAssignments[cellId] = value.filter(emp => emp.id !== activeEmployee.id);
-                }
-
-                // Add to new cell
+            }
+    
+            if (overId.startsWith("cell-")) {
                 const current = newAssignments[overId] || [];
-                newAssignments[overId] = [...current, activeEmployee];
-
-                return newAssignments;
-            });
-        }
-
+                const alreadyExists = current.some(emp => emp.title === activeEmployee.title);
+                if (!alreadyExists) {
+                    newAssignments[overId] = [...current, activeEmployee];
+                }
+            }
+    
+            sendAssignmentsToBackend(newAssignments);
+            return newAssignments;
+        });
+    
         setActiveEmployee(null);
     };
+    
+    
+    
 
     const router = useRouter();
     const [isManager, setIsManager] = useState<boolean | null>(null);
@@ -83,18 +152,61 @@ export default function Dashboard() {
     useEffect(() => {
         const loggedIn = localStorage.getItem("is_logged_in");
         const managerStatus = localStorage.getItem("is_manager");
-
+    
         if (!loggedIn) {
             router.push("/unauthorised");
         } else {
-            setIsManager(managerStatus === "true");
+            const isManager = managerStatus === "true";
+            setIsManager(isManager);
             setIsReady(true);
+    
+            // Only fetch assignments after auth
+            fetchAssignments();
         }
     }, []);
 
+    const fetchAssignments = async () => {
+      try {
+        const res = await fetch('/api/fetchAssignments');
+        const data = await res.json();
+    
+        if (data.success) {
+          const newAssignments = {};
+    
+          for (const assignment of data.assignments) {
+            const { employee, day, startTime, endTime } = assignment;
+    
+            // Find time indexes
+            const startIndex = times.indexOf(startTime);
+            const endIndex = times.indexOf(endTime);
+    
+            if (startIndex === -1 || endIndex === -1) continue;
+    
+            for (let i = startIndex; i <= endIndex; i++) {
+              const cellId = `cell-${day}-${times[i].replace(/[: ]/g, '')}`;
+    
+              if (!newAssignments[cellId]) newAssignments[cellId] = [];
+    
+              // Avoid duplicates
+              if (!newAssignments[cellId].some(e => e.title === employee)) {
+                newAssignments[cellId].push({
+                  id: `emp-${employee}-${day}-${times[i]}`,
+                  title: employee,
+                });
+              }
+            }
+          }
+    
+          setCellAssignments(newAssignments);
+        }
+      } catch (err) {
+        console.error("Failed to fetch assignments:", err);
+      }
+    };
+    
+    
+
     const handleLogout = () => {
-        document.cookie = "is_logged_in=; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
-        document.cookie = "is_manager=; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
         localStorage.removeItem("is_logged_in");
         localStorage.removeItem("is_manager");
     };
@@ -107,12 +219,12 @@ export default function Dashboard() {
                 <nav>
                     <div>
                         {isManager && (
-                            <Link href="/manager" className="mr-4">
-                                Edit employees and managers &rarr;<br />
-                            </Link>
+                            <Link href="/manager">Add & Edit Employee Details &rarr;</Link>
                         )}
+                    </div>
+                    <div>
                         <Link href="/" onClick={handleLogout}>
-                            Logout &rarr;
+                            Logout &rarr;&nbsp;&nbsp;
                         </Link>
                     </div>
                 </nav>
@@ -120,6 +232,7 @@ export default function Dashboard() {
 
             <main className="items-center">
                 <h1 className="text-4xl font-bold mb-6">Roster</h1>
+                {isManager && (<h3 className="font-bold">Automatically saves employee times</h3>)}
                 <DndContext collisionDetection={closestCorners} onDragStart={handleDragStart} onDragEnd={handleDragEnd} >
                     <div className="flex justify-center items-start gap-8 px-6 py-8">
                         {isManager && (
@@ -128,7 +241,7 @@ export default function Dashboard() {
                                 <Column employees={employees} isManager={isManager} />
                                 <DroppableCell id="trash-bin">
                                     <div className="w-40 h-20 border-2 border-red-600 rounded-lg flex items-center justify-center text-red-600 font-bold">
-                                        🗑️ Trash Bin
+                                        Trash Bin
                                     </div>
                                 </DroppableCell>
                             </div>
@@ -154,15 +267,19 @@ export default function Dashboard() {
                                                 return (
                                                     <td key={cellId} className="border p-1 align-top">
                                                         <DroppableCell id={cellId}>
-                                                        {(cellAssignments[cellId] || []).map((emp, idx) => (
-                                                            <div
-                                                            key={emp.id}
-                                                            className="bg-blue-300 text-black rounded p-1 text-sm font-medium my-1"
-                                                            id={`${cellId}::${emp.id}`} 
-                                                            >
-                                                            {emp.title}
-                                                            </div>
-                                                        ))}
+                                                            {(cellAssignments[cellId] || []).map((emp) => (
+                                                                isManager ? (
+                                                                    <DraggableEmployee
+                                                                        key={emp.id}
+                                                                        employee={emp}
+                                                                        cellId={cellId}
+                                                                    />
+                                                                ) : (
+                                                                    <div key={emp.id} className="bg-blue-500 rounded text-white p-1 mb-1">
+                                                                        {emp.title}
+                                                                    </div>
+                                                                )
+                                                            ))}
                                                         </DroppableCell>
                                                     </td>
                                                 );
@@ -178,3 +295,5 @@ export default function Dashboard() {
         </div>
     );
 }
+
+
