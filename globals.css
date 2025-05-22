@@ -47,6 +47,8 @@ main {
   justify-items: center;
 }
 
+
+/* circle for custom cursor */
 .cursor {
   position: fixed;
   border-radius: 50%;
@@ -74,3 +76,4 @@ main {
 .tools {
   justify-self: left;
 }
+
