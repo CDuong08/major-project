@@ -6,12 +6,10 @@ export default function Login() {
   const router = useRouter();
   let [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState("Select role");
 
   const handleSubmit =  async (e: React.FormEvent<HTMLFormElement>) => {    
     e.preventDefault(); 
     email = email.toLowerCase();
-    let is_manager = role === "Manager" ? true : false;
 
     const res = await fetch("/api/login", {
       method: "POST",
@@ -21,17 +19,13 @@ export default function Login() {
       body: JSON.stringify({
         email,
         password,
-        is_manager
     }),
   });
   
     const result = await res.json();
     if (result.success) {
-      localStorage.setItem("is_manager", is_manager.toString());
       localStorage.setItem("is_logged_in", "true");
-
-      document.cookie = `is_manager=${is_manager}; path=/`;
-      document.cookie = `is_logged_in=true; path=/`;
+      localStorage.setItem("is_manager", String(result.is_manager));
       router.push("/dashboard");
     } else {
       alert(result.message);
@@ -39,7 +33,6 @@ export default function Login() {
   };
 
   return (
-    
     <div className="flex flex-col items-center justify-center h-screen bg-gray-0">
       <header>
         <h1 className="text-4xl font-bold mb-6">Welcome to the roster system</h1>
@@ -74,22 +67,6 @@ export default function Login() {
             className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
             required
           />
-        </div>
-        <div className="mb-4">
-          <div className="flex items-center space-x-2">
-            <input
-              type="radio"
-              id="manager"
-              name="role"
-              value="Manager"
-              checked={role === "Manager"}
-              onChange={() => setRole("Manager")}
-              className="accent-white"
-            />
-            <label htmlFor="manager" className="text-white">
-              I'm a manager
-            </label>
-          </div>
         </div>
         <button
           type="submit"
