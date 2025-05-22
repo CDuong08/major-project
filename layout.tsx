@@ -2,6 +2,11 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Cursor from "./components/Cursor";
+import clientPromise from "./api/connection/mongodb";
+
+//Preconnect and warm up the database so there's no need to wait for a connection 
+//when the user attempts to log in
+await clientPromise;
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
