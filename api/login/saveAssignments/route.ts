@@ -17,21 +17,20 @@ export async function POST(req: NextRequest) {
     const collection = db.collection("Assignment times");
 
     // Process the assignments to convert them to the correct structure
-    const processedAssignments = assignments.map(({ employee, day, startTime, endTime }) => {
+    const processedAssignments = assignments.map(({ employee, day, times }) => {
       return {
         employee,
         day,
-        startTime,
-        endTime,
+        times
       };
-    });
+    });    
 
     // Upsert the assignments
-    await collection.updateOne(
+    await collection.replaceOne(
       { _id: "schedule" },
-      { $set: { assignments: processedAssignments } },
+      { _id: "schedule", assignments: processedAssignments },
       { upsert: true }
-    );
+    );    
 
     return NextResponse.json({ success: true });
   } catch (err) {
