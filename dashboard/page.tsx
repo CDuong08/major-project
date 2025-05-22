@@ -10,7 +10,7 @@ import { DraggableEmployee } from '../components/DraggableEmployee';
 
 export default function Dashboard() {
     const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
-    const times = ["9:00 AM", "10:00 AM", "11:00 AM", "12:00 PM", "1:00 PM", "2:00 PM", "3:00 PM", "4:00 PM", "5:00 PM"];
+    const timesArray = ["9:00 AM", "10:00 AM", "11:00 AM", "12:00 PM", "1:00 PM", "2:00 PM", "3:00 PM", "4:00 PM", "5:00 PM"];
 
 
     const [employees, setEmployees] = useState([]);
@@ -69,20 +69,28 @@ export default function Dashboard() {
                     });
                 } else {
                     assignmentsMap.get(key).times.push(time);
-                }
+                }                
             });
         });
     
         const mergedAssignments = Array.from(assignmentsMap.values()).map(({ employee, day, times }) => {
-            const sorted = times.sort((a, b) => new Date(`1970/01/01 ${a}`) - new Date(`1970/01/01 ${b}`));
+            const to24 = (t: string) => {
+                const [time, modifier] = t.split(' ');
+                let [hours, minutes] = time.split(':').map(Number);
+                if (modifier === 'PM' && hours !== 12) hours += 12;
+                if (modifier === 'AM' && hours === 12) hours = 0;
+                return hours * 60 + minutes;
+            };
+        
+            const sortedTimes = times.sort((a, b) => to24(a) - to24(b));
+        
             return {
                 employee,
                 day,
-                startTime: sorted[0],
-                endTime: sorted[sorted.length - 1]
+                times: sortedTimes
             };
         });
-    
+        
         const payload = {
             _id: "schedule",
             assignments: mergedAssignments
@@ -99,13 +107,30 @@ export default function Dashboard() {
             if (!result.success) {
                 console.error("Failed to save assignments");
             }
+            return result.success;
         } catch (err) {
             console.error("Error saving assignments:", err);
+            return false;
         }
     };
     
-    
 
+    const RunHandleBackend = async () => {
+        const success = await sendAssignmentsToBackend(cellAssignments);
+        if (success) {
+            window.alert("Updated roster schedule")
+        } else {
+            window.alert("Failed to update")
+        }
+    };
+    
+    const handleClearSchedule = async () => {
+        if (confirm("Are you sure you want to clear the entire schedule?")) {
+            setCellAssignments({});
+            await sendAssignmentsToBackend({});
+        }
+    };
+     
 
     const handleDragEnd = async (event) => {
         const { active, over } = event;
@@ -117,25 +142,21 @@ export default function Dashboard() {
         setCellAssignments(prev => {
             const newAssignments = { ...prev };
     
-            // Remove from old cell
-            for (const [cellId, value] of Object.entries(prev)) {
-                newAssignments[cellId] = value.filter(emp => emp.title !== activeEmployee.title);
+            // Only remove from the source cell if it's a drag between cells
+            if (activeEmployee && active.id.includes("::")) {
+                const [fromCellId, empId] = active.id.split("::");
+                if (newAssignments[fromCellId]) {
+                    newAssignments[fromCellId] = newAssignments[fromCellId].filter(emp => emp.id !== empId);
+                }
             }
-    
-            if (overId === "trash-bin") {
-                sendAssignmentsToBackend(newAssignments);
-                return newAssignments;
-            }
-    
+      
             if (overId.startsWith("cell-")) {
                 const current = newAssignments[overId] || [];
                 const alreadyExists = current.some(emp => emp.title === activeEmployee.title);
                 if (!alreadyExists) {
                     newAssignments[overId] = [...current, activeEmployee];
-                }
+                }                
             }
-    
-            sendAssignmentsToBackend(newAssignments);
             return newAssignments;
         });
     
@@ -166,45 +187,48 @@ export default function Dashboard() {
     }, []);
 
     const fetchAssignments = async () => {
-      try {
-        const res = await fetch('/api/fetchAssignments');
-        const data = await res.json();
-    
-        if (data.success) {
-          const newAssignments = {};
-    
-          for (const assignment of data.assignments) {
-            const { employee, day, startTime, endTime } = assignment;
-    
-            // Find time indexes
-            const startIndex = times.indexOf(startTime);
-            const endIndex = times.indexOf(endTime);
-    
-            if (startIndex === -1 || endIndex === -1) continue;
-    
-            for (let i = startIndex; i <= endIndex; i++) {
-              const cellId = `cell-${day}-${times[i].replace(/[: ]/g, '')}`;
-    
-              if (!newAssignments[cellId]) newAssignments[cellId] = [];
-    
-              // Avoid duplicates
-              if (!newAssignments[cellId].some(e => e.title === employee)) {
-                newAssignments[cellId].push({
-                  id: `emp-${employee}-${day}-${times[i]}`,
-                  title: employee,
-                });
-              }
+        try {
+          const res = await fetch('/api/fetchAssignments');
+          const data = await res.json();
+      
+          if (data.success) {
+            const newAssignments: Record<string, { id: string, title: string }[]> = {};
+      
+            for (const assignment of data.assignments) {
+              const { employee, day, times } = assignment;
+              if (!times || times.length === 0) continue;
+      
+              // Sort times to determine range
+              const sorted = [...times].sort((a, b) => {
+                const to24 = (t: string) => {
+                  const [time, modifier] = t.split(' ');
+                  let [hours, minutes] = time.split(':').map(Number);
+                  if (modifier === 'PM' && hours !== 12) hours += 12;
+                  if (modifier === 'AM' && hours === 12) hours = 0;
+                  return hours * 60 + minutes;
+                };
+                return to24(a) - to24(b);
+              });
+      
+              for (const time of times) {
+                const cellId = `cell-${day}-${time.replace(/[: ]/g, '')}`;
+                if (!newAssignments[cellId]) newAssignments[cellId] = [];
+              
+                if (!newAssignments[cellId].some(e => e.title === employee)) {
+                  newAssignments[cellId].push({
+                    id: `emp-${employee}-${day}-${time}`,
+                    title: employee,
+                  });
+                }
+              }              
             }
+      
+            setCellAssignments(newAssignments);
           }
-    
-          setCellAssignments(newAssignments);
+        } catch (err) {
+          console.error("Failed to fetch assignments:", err);
         }
-      } catch (err) {
-        console.error("Failed to fetch assignments:", err);
-      }
-    };
-    
-    
+      }; 
 
     const handleLogout = () => {
         localStorage.removeItem("is_logged_in");
@@ -224,7 +248,7 @@ export default function Dashboard() {
                     </div>
                     <div>
                         <Link href="/" onClick={handleLogout}>
-                            Logout &rarr;&nbsp;&nbsp;
+                            Logout &rarr;
                         </Link>
                     </div>
                 </nav>
@@ -232,7 +256,16 @@ export default function Dashboard() {
 
             <main className="items-center">
                 <h1 className="text-4xl font-bold mb-6">Roster</h1>
-                {isManager && (<h3 className="font-bold">Automatically saves employee times</h3>)}
+                {isManager && (
+                    <div className="flex gap-4 mt-4 w-full justify-center">
+                        <button className="mt-4 bg-green-500 text-white p-2 rounded" onClick={RunHandleBackend}>
+                            <h3 className="font-bold">Save roster</h3>
+                        </button>
+                        <button className="mt-4 bg-red-500 text-white p-2 rounded" onClick={handleClearSchedule}>
+                            <h3 className="font-bold">Clear roster</h3>
+                        </button>
+                    </div>
+                )}
                 <DndContext collisionDetection={closestCorners} onDragStart={handleDragStart} onDragEnd={handleDragEnd} >
                     <div className="flex justify-center items-start gap-8 px-6 py-8">
                         {isManager && (
@@ -245,7 +278,6 @@ export default function Dashboard() {
                                     </div>
                                 </DroppableCell>
                             </div>
-                            
                         )}
 
                         <div className="bg-gray-700 text-white p-6 rounded shadow w-full timetable">
@@ -259,7 +291,7 @@ export default function Dashboard() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {times.map(time => (
+                                    {timesArray.map(time => (
                                         <tr key={time}>
                                             <td className="border p-5 font-bold">{time}</td>
                                             {days.map(day => {
