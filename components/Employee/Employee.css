@@ -1,0 +1,12 @@
+.employee {
+    background-color: rgba(128, 128, 128, 0.295);
+    border-radius: 5px;
+    box-shadow: rgba(0, 0, 0, 0.1) 0px 1px 4px;
+    width:  100%;
+    padding: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 20px;
+    touch-action: none;
+}
