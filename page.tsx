@@ -1,8 +1,14 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 export default function Login() {
+
+  // Warmup the connection to the mongodb on page load
+  useEffect(() => {
+    fetch("/api/warmup")
+  }, []);
+
   const router = useRouter();
   let [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
