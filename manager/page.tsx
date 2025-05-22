@@ -18,16 +18,18 @@ export default function Dashboard() {
   const router = useRouter();
 
   // Fetch employees on load
-  useEffect(() => {
-    async function fetchEmployees() {
-      const res = await fetch('/api/fetchEmployee');
-      const data = await res.json();
-      if (data.success) {
-        setEmployees(data.employees);
-      }
+  const fetchEmployees = async () => {
+    const res = await fetch('/api/fetchEmployee');
+    const data = await res.json();
+    if (data.success) {
+      setEmployees(data.employees);
     }
+  };
+  
+  useEffect(() => {
     fetchEmployees();
   }, []);
+  
 
   // Auth check
   useEffect(() => {
@@ -51,7 +53,7 @@ export default function Dashboard() {
     });
     const data = await res.json();
     if (data.success) {
-      alert("Employee updated");
+      fetchEmployees();
     } else {
       alert("Error saving employee");
     }
@@ -61,11 +63,14 @@ export default function Dashboard() {
     if (!selectedEmployee) return;
     const res = await fetch(`/api/saveEmployee`, {
       method: 'DELETE',
-    });
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: selectedEmployee.email }),
+    });    
     const data = await res.json();
     if (data.success) {
       setEmployees(employees.filter(emp => emp.email !== selectedEmployee.email));
       setSelectedEmployee(null);
+      fetchEmployees();
     } else {
       alert("Error deleting employee");
     }
