@@ -25,22 +25,22 @@ export default function Dashboard() {
       setEmployees(data.employees);
     }
   };
-  
+
   useEffect(() => {
     fetchEmployees();
   }, []);
-  
+
 
   // Auth check
   useEffect(() => {
     const loggedIn = localStorage.getItem("is_logged_in");
     const managerStatus = localStorage.getItem("is_manager");
 
-    if (!loggedIn) {
-      router.push("/unauthorised");
-    } else {
-      setIsManager(managerStatus === "true");
+    if (loggedIn && managerStatus === "true") {
+      setIsManager(true);
       setIsReady(true);
+    } else {
+      router.push("/unauthorised");
     }
   }, []);
 
@@ -65,7 +65,7 @@ export default function Dashboard() {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: selectedEmployee.email }),
-    });    
+    });
     const data = await res.json();
     if (data.success) {
       setEmployees(employees.filter(emp => emp.email !== selectedEmployee.email));
@@ -99,7 +99,7 @@ export default function Dashboard() {
               className="cursor-pointer mb-2 text-blue-600 hover:underline"
               onClick={() => setSelectedEmployee(emp)}
             >
-              <div className="bg-blue-500 rounded text-white p-1 mb-1">{ emp.name }</div>
+              <div className="bg-blue-500 rounded text-white p-1 mb-1">{emp.name}</div>
             </li>
           ))}
         </ul>
